@@ -1,5 +1,4 @@
-﻿using NumSharp;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,89 +9,84 @@ namespace DeepNeuralNetworks;
 public class NeuralNetwork
 {
 
-    private NeuronLayer[] _layers;
+    private Layer[] Layers;
+    public Activation Activation { get; }
+    public Normalizer Normalizer { get; }
 
-    private ActivationFunction activationFunction;
-
-    //public IEnumerable<NeuronLayer> Layers => _layers;
-    public NeuralNetwork(ActivationFunction function,params int[] layers) : this(layers, function)
+    public NeuralNetwork(Activation activation,Normalizer normalizer,params int[] layers)
     {
-
-    }
-
-    public NeuralNetwork(int[] layers, ActivationFunction function)
-    {
-        _layers = new NeuronLayer[layers.Length-1];
-        for (int i = 0; i < layers.Length-1; i++)
+        Activation = activation;
+        Normalizer = normalizer;
+        //Activation = activation ??= Activation.Relu;
+        Layers = new Layer[layers.Length - 1];
+        for (int i = 0; i < layers.Length - 1; i++)
         {
-            _layers[i] = new NeuronLayer(layers[i], layers[i + 1], function);
+            Layers[i] = new Layer(layers[i], layers[i + 1]);
         }
-        activationFunction = function;
     }
 
 
-    public NDArray Predict(NDArray values)
+    public Matrix Predict(Matrix mat)
     {
-        var X = values.copy();
-        for (int i = 0;i < _layers.Length; i++)
+        mat = Normalizer.NormalizeInput(mat);
+        foreach (var item in Layers)
         {
-            X = _layers[i].Forward(X);
+            mat = Activation.Forward(item.Forward(mat));
         }
-        return X;
+        return Normalizer.NormalizeOutput(mat);
     }
-    public void Fit(NDArray X, NDArray Y,float learningRate ,uint repeats = 10000)
-    {
 
-        
-        for (int repeat = 0; repeat < repeats; repeat++)
+
+    public void Fit(Matrix X, Matrix Y, float LearningRate = 0.1f, int epochs = 100000)
+    {
+        X = Normalizer.NormalizeInput(X);
+        Y = Normalizer.NormalizeOutput(Y);
+        List<Matrix> values = new();
+        List<Matrix> deltas = new();
+        int i;
+        int current;
+        Matrix layer;
+        Matrix delta;
+        Matrix error;
+        Matrix dot;
+        for (int epoch = 0; epoch < epochs; epoch++)
         {
-            NDArray error;
-            int current;
-            List<NDArray> a = new();
-            List<NDArray> deltas = new();
-            NDArray layer;
-            NDArray delta;
-            a.Clear();
+            current = Random.Shared.Next(X.Dimensions.Height);
+            values.Clear();
             deltas.Clear();
-            
-            current = Random.Shared.Next(X.shape[0]);
 
-            a.Add(np.array(X[current]));
 
-            for (int l = 0; l < _layers.Length; l++)
+            values.Add(X[current]);
+            //Console.WriteLine(values.Last().ToString());
+            foreach (var item in Layers)
             {
-                a.Add(_layers[l].Forward(a[l]));
+                values.Add(Activation.Forward(item.Forward(values.Last())));
             }
 
-            error = -1*(Y[current] - a.Last());
+            error = values.Last()- Y[current];
 
-            deltas.Add(error*activationFunction.Backwords(a.Last()));
+            deltas.Add(error.SillyMult(Activation.Backwards(values.Last())));
 
-
-            for (int l = a.Count-2; l > 0; l--)
+            for ( i = values.Count-2; i>0; i--)
             {
-                deltas.Add(deltas.Last().dot(_layers[l].Weights.T) * activationFunction.Backwords(a[l]));
+                dot = (deltas.Last()*(Layers[i].Weights.T));
+                deltas.Add((deltas.Last() * Layers[i].Weights.T).SillyMult(Activation.Backwards(values[i])) );
             }
 
             deltas.Reverse();
 
-
-            for (int i = 0; i < _layers.Length; i++)
+            for (i = 0; i < Layers.Length; i++)
             {
-                layer = np.atleast_2d(a[i]);
-                delta = np.atleast_2d(deltas[i]);
-                _layers[i].Weights += learningRate*layer.T.dot(delta);
-            }
-            //Console.WriteLine(error.mean().ToString());
+                layer = values[i];
+                delta = deltas[i];
+                Layers[i].Weights -= LearningRate * layer.T * delta;
 
-            if (repeat % 1000 == 0)
-            {
-                Console.WriteLine("repeat "+repeat);
+                //Console.WriteLine(Layers[i].Weights);
             }
+
 
         }
     }
-
 
 
 }
